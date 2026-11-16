@@ -6,7 +6,8 @@
 // PzaUi is the hub:
 //   Install(context)   once in IMod.Initialize: resolves the game's members by name (a miss = no windows, one log line, the mod goes on),
 //                      patches PlayerInterface.Steer (prefix: once a frame on the host thread), ScreenRouter.BindFaithfulScreen (postfix: our
-//                      windows' bindings) and, when tiny buttons are used, the four pointer calls; registers the HUD extension.
+//                      windows' bindings), GameHost.GatherPortraitKeys (prefix: character faces, PzaPortrait; optional) and, when tiny buttons
+//                      are used, the four pointer calls; registers the HUD extension.
 //   Add(window) / Add(tinyButton)   any time before or after Install.
 // Every frame (Steer prefix): the player's MyGuiScreenHost is found, our windows registered on it, their queued open / close applied, their
 // places watched and saved. Everything runs on the host thread; nothing here touches the World.
@@ -23,7 +24,7 @@ namespace PZA.MeitouUi;
 public static class PzaUi
 {
     /// <summary>The library's version (written in the log at Install).</summary>
-    public const string Version = "0.1.0";
+    public const string Version = "0.2.0";
 
     /// <summary>Where the library's lines go (the mod sets it, usually to its own log with its prefix).</summary>
     public static Action<string> Log = _ => { };
@@ -47,6 +48,10 @@ public static class PzaUi
     public static Action? EachFrame { get; set; }
 
     public static IReadOnlyList<PzaWindow> Windows => s_windows;
+
+    /// <summary>The player's selected characters (PlayerInterface.SelectedIds), empty before the first frame or when the game lacks it.</summary>
+    public static IReadOnlyList<Meitou.Simulation.CharacterId> SelectedCharacters() =>
+        Player is not null && Access.SelectedIds?.Invoke(Player, null) is IReadOnlyList<Meitou.Simulation.CharacterId> ids ? ids : [];
     public static IReadOnlyList<PzaTinyButton> TinyButtons => s_tiny;
 
     public static void Add(PzaWindow w)
@@ -81,8 +86,9 @@ public static class PzaUi
             s_context = context;
             s_installed = true;
             if (s_tiny.Count > 0) PatchPointer(harmony);
+            bool faces = PzaPortrait.Install(harmony);
             context?.AddUi(new PzaHud(context.Id));
-            Log($"PZA's Meitou UI {Version}: patched PlayerInterface.Steer, ScreenRouter.BindFaithfulScreen{(s_pointerPatched ? ", the four pointer calls" : "")}; {s_windows.Count} window(s), {s_tiny.Count} tiny button(s)");
+            Log($"PZA's Meitou UI {Version}: patched PlayerInterface.Steer, ScreenRouter.BindFaithfulScreen{(s_pointerPatched ? ", the four pointer calls" : "")}{(faces ? ", GameHost.GatherPortraitKeys (faces)" : "")}; {s_windows.Count} window(s), {s_tiny.Count} tiny button(s)");
             return true;
         }
         catch (Exception e)
@@ -195,6 +201,7 @@ public static class Access
     public static AccessTools.FieldRef<object, MyGuiScreenHost> FaithfulScreens = null!;
     public static FieldInfo Width = null!, Height = null!;
     public static PropertyInfo? UiEditing;
+    public static MethodInfo? SelectedIds;
 
     public static List<string> ResolveAll()
     {
@@ -218,6 +225,7 @@ public static class Access
         Height = AccessTools.Field(PlayerInterface, "Height")!;
         if (Width?.FieldType != typeof(int) || Height?.FieldType != typeof(int)) missing.Add("fields PlayerInterface.Width / Height");
         UiEditing = AccessTools.Property(PlayerInterface, "UiEditing");
+        SelectedIds = AccessTools.Method(PlayerInterface, "SelectedIds", Type.EmptyTypes);
         return missing;
     }
 

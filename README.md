@@ -2,7 +2,7 @@
 
 Author: PZA. Licence: GPLv3 or later. The shared window library for PZA's Meitou mods (MeitouClient 0.20.1): real Kenshi windows on Meitou's own
 window engine (`MyGuiScreenHost`) and the PZA tiny HUD button, with everything the PZA UI rules ask for. Proven in game by PZA's UI Probe.
-Version 0.1.0, early: expect changes.
+Version 0.2.0, early: expect changes.
 
 **A source library.** Each mod compiles these files into its own assembly, so each mod has its own copy, its own state and its own patches;
 two mods can never clash:
@@ -50,17 +50,32 @@ public void Initialize(ModContext context)
 |---|---|
 | `PzaUi.cs` | `Install` (resolves the game's members by name; patches `PlayerInterface.Steer`, `ScreenRouter.BindFaithfulScreen`, and when tiny buttons are used the four pointer calls; registers the HUD), `Add`, `Frame`, `Typing`, `EachFrame`, `Guard` (a throw is logged and never reaches the game; 50 faults switch that window off for the session) |
 | `PzaWindow.cs` | one MyGUI window: open / close / toggle (queued, applied on the next frame), `Bind`, `Event`, the place as a fraction of the screen (`LoadPlace` / `SavePlace`, saved after a drag and at close), `OpenChanged`; helpers `Enable`, `Tick`, `Tooltip`, `TabText`, `Props`, `Lines`; `PzaSettings.Set` |
-| `PzaLayout.cs` | MyGUI layout XML with Kenshi's skins: `Window`, `Text`, `Button`, `Tick`, `Slider`, `Edit`, `List`, `Tabs`, `HelpPage`, `Doc` |
+| `PzaLayout.cs` | MyGUI layout XML with Kenshi's skins: `Window`, `Text`, `Button`, `Tick`, `Slider`, `Edit`, `List`, `Tabs`, `HelpPage`, `Portrait`, `Doc` |
 | `PzaStrings.cs` | the four-language string table (same file format as the RE_Kenshi plugins', placeholders checked, never a format string) |
+| `PzaPortrait.cs` | a character's own face in a window (`PzaLayout.Portrait` + `PzaPortrait.Face(b, name, characterId)`), see below |
 | `PzaTinyButton.cs` | the tiny HUD button (drag, click on release, wheel opacity 0.35-1 that does not zoom the camera, optional "+") and `PzaHud` |
 
 What the engine gives every window for free (Confirmed in game 2026-11-16): title-bar drag, raise, Escape, F7 with the HUD, keyboard focus and
 typing (hotkeys stand down), tabs, lists (select, double-click accept), sliders, tick boxes, native Kenshi tooltips, no pause unless modal.
 
-Rules learned the hard way (each in the research doc): tooltips and tick states go through the binding's `Properties` (a layout's
+Rules learned the hard way (in PZA's UI Probe): tooltips and tick states go through the binding's `Properties` (a layout's
 `UserString`s do not reach the control); tab captions through `Text["tabs@tabN"]` (binding `TabCaptions` turns the control into one-page
 mode); Meitou fires a HUD button's action on the press (so the tiny button takes its click from the release); the pointer and wheel over the
 interface go to `PlayerInterface.MouseDown / MouseMove / MouseUp / UiScroll`, never to the control tick's input.
+
+## Character faces (0.2.0)
+
+```csharp
+PzaLayout.Portrait("Face0", 0.03, 0.03, 0.2, 0.3)          // in the layout: an ImageBox, keep it square on screen
+PzaPortrait.Face(b, "Face0", characterId);                 // in Bind, every frame the face should show
+```
+
+The face is the **live character**: its own head, look and gear, recruits included, drawn by Meitou's own portrait renderer the way the squad
+bar draws it (not a CHARACTER record's default look). The library adds the character to the frame's portrait requests (a prefix on
+`GameHost.GatherPortraitKeys`, which both renderers call) in a free cell of Meitou's portrait atlas, and the ImageBox shows that cell.
+Limits: a character not loaded in the world shows nothing; at most 12 faces at once per mod; the picture appears a frame or two after the
+first bind. If Meitou lacks a member, `Install` logs "no character faces" and the windows work without them. `PzaUi.SelectedCharacters()`
+gives the player's selection.
 
 ## Checked
 

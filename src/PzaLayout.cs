@@ -66,6 +66,10 @@ public static class PzaLayout
         return sb.Append("</Widget>").ToString();
     }
 
+    /// <summary>A character's face (an ImageBox): PzaPortrait.Face(b, name, id) in Bind fills it. Keep it square on screen.</summary>
+    public static string Portrait(string name, double x, double y, double w, double h) =>
+        $"<Widget type=\"ImageBox\" skin=\"ImageBox\" {Pos(x, y, w, h)} name=\"{Esc(name)}\"/>";
+
     /// <summary>A help page as a tab: one wrapped text filling the page (PZA UI rules 11).</summary>
     public static (string, string[]) HelpPage(string page, string textName) => (page, [Text(textName, 0.03, 0.03, 0.94, 0.94, wrap: true)]);
 }
