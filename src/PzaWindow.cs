@@ -6,6 +6,7 @@
 using System.Globalization;
 using System.Numerics;
 using Meitou.Data.Ui;
+using Meitou.Game.Host.Input;
 using Meitou.Game.Ui;
 
 namespace PZA.MeitouUi;
@@ -28,9 +29,21 @@ public sealed class PzaWindow(string id, Func<string> layoutXml, bool modal = fa
     public Action<Vector2>? SavePlace { get; set; }
     /// <summary>Opened / closed (by us, by its close chrome, by Escape): the mod can follow (its settings, its hotkey's state).</summary>
     public Action<bool>? OpenChanged { get; set; }
+    /// <summary>The window can be minimized (PZA UI rules 6 and 11): its layout uses PzaLayout.WindowMin (Kenshi's window with a minimize
+    /// button, Kenshi_WindowCXM), and the "-" button or a double click on the title closes it and calls <see cref="Minimized"/> (the mod's tiny
+    /// button shows while the window is closed, and its "+" opens it again).</summary>
+    public bool Minimizable { get; init; }
+    /// <summary>Called after the window was minimized ("-" or a title double click).</summary>
+    public Action? Minimized { get; set; }
+
+    /// <summary>The minimize button's action (bound to the template's "minimize" event, which Meitou does not handle itself).</summary>
+    public const string MinimizeAction = "pza:minimize";
 
     MyGuiScreenHost? _host;
+    string _root = "Root";
     bool _wantOpen, _wantClose, _wasOpen;
+    long _titleT;
+    Vector2 _titleAt;
     Vector2 _lastOffset;
     int _binds;
 
@@ -51,8 +64,9 @@ public sealed class PzaWindow(string id, Func<string> layoutXml, bool modal = fa
                 var layout = MyGuiReader.ParseLayout(layoutXml());
                 host.Register(Id, layout, Modal);
                 host.Activated += OnEvent;
-                PzaUi.Log($"PZA's Meitou UI: window '{Id}' registered ({layout.Widgets.Count} top widgets{(Modal ? ", modal" : "")})");
+                PzaUi.Log($"PZA's Meitou UI: window '{Id}' registered ({layout.Widgets.Count} top widgets{(Modal ? ", modal" : "")}{(Minimizable ? ", minimizable" : "")})");
             }
+            if (host.Layout(Id).Widgets.FirstOrDefault(w => w.Type == "Window") is { } rootWidget) _root = rootWidget.Name;
         }
 
         if (_wantOpen)
@@ -102,13 +116,42 @@ public sealed class PzaWindow(string id, Func<string> layoutXml, bool modal = fa
     public void ApplyBind(UiBindings b)
     {
         if (_binds++ == 0) PzaUi.Log($"PZA's Meitou UI: '{Id}' first bind ({b.Disabled.Count} widget(s) arrived disabled)");
+        // the minimize button is a template part whose event goes to its owner: "<root>@minimize" names the action it raises
+        if (Minimizable) b.Actions[_root + "@minimize"] = MinimizeAction;
         Bind?.Invoke(b);
     }
 
     void OnEvent(MyGuiEvent e)
     {
         if (e.Screen != Id || Guard.Dead(Id)) return;
+        if (e.Action == MinimizeAction) { Minimize("the - button"); return; }
         Guard.Run(Id, "event " + e.Action, () => Event?.Invoke(e));
+    }
+
+    /// <summary>Closes the window as a minimize (the mod's tiny button takes over).</summary>
+    public void Minimize(string from)
+    {
+        Close();
+        PzaUi.Log($"PZA's Meitou UI: '{Id}' minimized ({from})");
+        Guard.Run(Id, "minimized", () => Minimized?.Invoke());
+    }
+
+    /// <summary>A left press anywhere (PlayerInterface.MouseDown prefix): two presses on the title strip within 400 ms and 6 px minimize the
+    /// window (a drag never counts: its press is single). The strip is the header part of Kenshi's window template as last laid out; a press
+    /// on its own buttons (close, minimize) does not count.</summary>
+    public void PointerDown(MouseButton button, Vector2 p)
+    {
+        if (!Minimizable || button != MouseButton.Left || _host is not { } host || !IsOpen) return;
+        var frame = host.LastFrame.FirstOrDefault(f => f.Id == Id);
+        var header = frame?.Controls.FirstOrDefault(c => c.Skin == "Kenshi_GenericWindowHeaderSkin");
+        if (header is null) return;
+        var r = header.Bounds;
+        if (p.X < r.X || p.Y < r.Y || p.X >= r.X + r.Width || p.Y >= r.Y + r.Height) return;
+        if (host.HitTest(p) is { } hit && (hit.Screen != Id || hit.Control.Type == "Button")) return;
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        bool dbl = System.Diagnostics.Stopwatch.GetElapsedTime(_titleT, now).TotalMilliseconds < 400 && Vector2.Distance(p, _titleAt) < 6;
+        _titleT = dbl ? 0 : now; _titleAt = p;
+        if (dbl) Minimize("a double click on the title");
     }
 
     static string F(Vector2 v) => v.X.ToString("0", CultureInfo.InvariantCulture) + "," + v.Y.ToString("0", CultureInfo.InvariantCulture);

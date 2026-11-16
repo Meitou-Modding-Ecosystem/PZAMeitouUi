@@ -24,7 +24,7 @@ namespace PZA.MeitouUi;
 public static class PzaUi
 {
     /// <summary>The library's version (written in the log at Install).</summary>
-    public const string Version = "0.2.0";
+    public const string Version = "0.2.1";
 
     /// <summary>Where the library's lines go (the mod sets it, usually to its own log with its prefix).</summary>
     public static Action<string> Log = _ => { };
@@ -58,6 +58,7 @@ public static class PzaUi
     {
         if (s_windows.Any(x => x.Id == w.Id)) throw new ArgumentException("a window with id " + w.Id + " is already added");
         s_windows.Add(w);
+        if (w.Minimizable && s_installed && s_context is not null) PatchPointer(s_context.Harmony);
     }
 
     public static void Add(PzaTinyButton t)
@@ -85,7 +86,7 @@ public static class PzaUi
             harmony.Patch(Access.BindFaithfulScreen, postfix: Hook(nameof(BindPostfix)));
             s_context = context;
             s_installed = true;
-            if (s_tiny.Count > 0) PatchPointer(harmony);
+            if (s_tiny.Count > 0 || s_windows.Any(w => w.Minimizable)) PatchPointer(harmony);
             bool faces = PzaPortrait.Install(harmony);
             context?.AddUi(new PzaHud(context.Id));
             Log($"PZA's Meitou UI {Version}: patched PlayerInterface.Steer, ScreenRouter.BindFaithfulScreen{(s_pointerPatched ? ", the four pointer calls" : "")}{(faces ? ", GameHost.GatherPortraitKeys (faces)" : "")}; {s_windows.Count} window(s), {s_tiny.Count} tiny button(s)");
@@ -154,7 +155,14 @@ public static class PzaUi
     }
 
     // ---- the pointer over the interface (GameLoop hands it to these PlayerInterface calls and keeps it out of the control tick's input) ----
-    static void DownPrefix(MouseButton button, Vector2 p) { foreach (var t in s_tiny) Guard.Run(t.Id, "press", () => t.PointerDown(button, p)); }
+    static void DownPrefix(MouseButton button, Vector2 p) => PointerDown(button, p);
+
+    /// <summary>A press over the interface (the MouseDown prefix; public for offline checks): the tiny buttons and the minimizable windows' title.</summary>
+    public static void PointerDown(MouseButton button, Vector2 p)
+    {
+        foreach (var t in s_tiny) Guard.Run(t.Id, "press", () => t.PointerDown(button, p));
+        foreach (var w in s_windows) if (w.Minimizable) Guard.Run(w.Id, "title press", () => w.PointerDown(button, p));
+    }
     static void MovePrefix(Vector2 p) { foreach (var t in s_tiny) Guard.Run(t.Id, "move", () => t.PointerMove(p)); }
     static void UpPrefix(MouseButton button, Vector2 p) { foreach (var t in s_tiny) Guard.Run(t.Id, "release", () => t.PointerUp(button, p)); }
 

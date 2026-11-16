@@ -26,6 +26,10 @@ public static class PzaLayout
     public static string Window(string name, string caption, double x, double y, double w, double h, params string[] children) =>
         $"<Widget type=\"Window\" skin=\"Kenshi_WindowCX\" {Pos(x, y, w, h)} layer=\"Window\" name=\"{Esc(name)}\">{Prop("Caption", caption)}{string.Concat(children)}</Widget>";
 
+    /// <summary>A Kenshi window with a minimize button beside its close button (Kenshi_WindowCXM); use with PzaWindow { Minimizable = true }.</summary>
+    public static string WindowMin(string name, string caption, double x, double y, double w, double h, params string[] children) =>
+        $"<Widget type=\"Window\" skin=\"Kenshi_WindowCXM\" {Pos(x, y, w, h)} layer=\"Window\" name=\"{Esc(name)}\">{Prop("Caption", caption)}{string.Concat(children)}</Widget>";
+
     /// <summary>A text line or block (Kenshi_TextboxStandardText). wrap = word wrap (top-aligned).</summary>
     public static string Text(string name, double x, double y, double w, double h, bool wrap = false, string? align = null)
     {

@@ -49,8 +49,8 @@ public void Initialize(ModContext context)
 | File | What |
 |---|---|
 | `PzaUi.cs` | `Install` (resolves the game's members by name; patches `PlayerInterface.Steer`, `ScreenRouter.BindFaithfulScreen`, and when tiny buttons are used the four pointer calls; registers the HUD), `Add`, `Frame`, `Typing`, `EachFrame`, `Guard` (a throw is logged and never reaches the game; 50 faults switch that window off for the session) |
-| `PzaWindow.cs` | one MyGUI window: open / close / toggle (queued, applied on the next frame), `Bind`, `Event`, the place as a fraction of the screen (`LoadPlace` / `SavePlace`, saved after a drag and at close), `OpenChanged`; helpers `Enable`, `Tick`, `Tooltip`, `TabText`, `Props`, `Lines`; `PzaSettings.Set` |
-| `PzaLayout.cs` | MyGUI layout XML with Kenshi's skins: `Window`, `Text`, `Button`, `Tick`, `Slider`, `Edit`, `List`, `Tabs`, `HelpPage`, `Portrait`, `Doc` |
+| `PzaWindow.cs` | one MyGUI window: open / close / toggle, `Minimizable` (0.2.1: the "-" or a double click on the title closes it and calls `Minimized`; the tiny button takes over) (queued, applied on the next frame), `Bind`, `Event`, the place as a fraction of the screen (`LoadPlace` / `SavePlace`, saved after a drag and at close), `OpenChanged`; helpers `Enable`, `Tick`, `Tooltip`, `TabText`, `Props`, `Lines`; `PzaSettings.Set` |
+| `PzaLayout.cs` | MyGUI layout XML with Kenshi's skins: `Window`, `WindowMin` (with Kenshi's minimize button), `Text`, `Button`, `Tick`, `Slider`, `Edit`, `List`, `Tabs`, `HelpPage`, `Portrait`, `Doc` |
 | `PzaStrings.cs` | the four-language string table (same file format as the RE_Kenshi plugins', placeholders checked, never a format string) |
 | `PzaPortrait.cs` | a character's own face in a window (`PzaLayout.Portrait` + `PzaPortrait.Face(b, name, characterId)`), see below |
 | `PzaTinyButton.cs` | the tiny HUD button (drag, click on release, wheel opacity 0.35-1 that does not zoom the camera, optional "+") and `PzaHud` |
