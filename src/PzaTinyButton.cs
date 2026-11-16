@@ -134,9 +134,11 @@ public sealed class PzaHud(string modId) : IUiExtension
     {
         var root = new UiNode(Id + ".root") { Placement = UiPlacement.Fill, Pickable = false };
         float k = Scale(c.Viewport.Height);
+        bool inGame = PzaUi.InGame;   // never on the title screen
         foreach (var t in PzaUi.TinyButtons)
         {
             t.ButtonRect = t.AllRect = null;
+            if (!inGame) continue;
             t.Viewport = c.Viewport;
             if (Guard.Dead(t.Id)) continue;
             bool visible = false;

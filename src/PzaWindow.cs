@@ -69,6 +69,20 @@ public sealed class PzaWindow(string id, Func<string> layoutXml, bool modal = fa
             if (host.Layout(Id).Widgets.FirstOrDefault(w => w.Type == "Window") is { } rootWidget) _root = rootWidget.Name;
         }
 
+        // not in a game (the title screen, before a game loads): hidden; one that is or wants to be open comes back once a game runs.
+        // Closed quietly: OpenChanged is not raised (the mod keeps its remembered form) and the place is not saved.
+        if (!PzaUi.InGame)
+        {
+            if (host.IsOpen(Id))
+            {
+                host.Close(Id);
+                _wantOpen = !_wantClose;
+                PzaUi.Log($"PZA's Meitou UI: '{Id}' hidden until a game runs");
+            }
+            if (_wantClose) _wantOpen = _wantClose = false;
+            return;
+        }
+
         if (_wantOpen)
         {
             _wantOpen = false;

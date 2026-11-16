@@ -2,7 +2,7 @@
 
 Author: PZA. Licence: GPLv3 or later. The shared window library for PZA's Meitou mods (MeitouClient 0.20.1): real Kenshi windows on Meitou's own
 window engine (`MyGuiScreenHost`) and the PZA tiny HUD button, with everything the PZA UI rules ask for. Proven in game by PZA's UI Probe.
-Version 0.2.0, early: expect changes.
+Version 0.2.3, early: expect changes.
 
 **A source library.** Each mod compiles these files into its own assembly, so each mod has its own copy, its own state and its own patches;
 two mods can never clash:
@@ -54,6 +54,10 @@ public void Initialize(ModContext context)
 | `PzaStrings.cs` | the four-language string table (same file format as the RE_Kenshi plugins', placeholders checked, never a format string) |
 | `PzaPortrait.cs` | a character's own face in a window (`PzaLayout.Portrait` + `PzaPortrait.Face(b, name, characterId)`), see below |
 | `PzaTinyButton.cs` | the tiny HUD button (drag, click on release, wheel opacity 0.35-1 that does not zoom the camera, optional "+") and `PzaHud` |
+
+**Only in a game (0.2.3).** On the title screen (Meitou's main menu) and before a game is loaded, PZA windows and tiny buttons are not shown;
+a window that was open (or remembered open) comes back once a game runs, without `OpenChanged` firing. `PzaUi.InGame` says which
+(`PlayerInterface.TitleOpen` and `World.Player.Exists`; true if the game lacks them).
 
 What the engine gives every window for free (Confirmed in game 2026-11-16): title-bar drag, raise, Escape, F7 with the HUD, keyboard focus and
 typing (hotkeys stand down), tabs, lists (select, double-click accept), sliders, tick boxes, native Kenshi tooltips, no pause unless modal.

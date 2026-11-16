@@ -24,7 +24,7 @@ namespace PZA.MeitouUi;
 public static class PzaUi
 {
     /// <summary>The library's version (written in the log at Install).</summary>
-    public const string Version = "0.2.2";
+    public const string Version = "0.2.3";
 
     /// <summary>Where the library's lines go (the mod sets it, usually to its own log with its prefix).</summary>
     public static Action<string> Log = _ => { };
@@ -43,6 +43,23 @@ public static class PzaUi
 
     /// <summary>A text box (ours or the game's) has the keyboard: hotkeys must stand down (PZA UI rules 4).</summary>
     public static bool Typing => (Host?.HasKeyboardFocus ?? false) || (Player is not null && Access.UiEditing is not null && (bool)Access.UiEditing.GetValue(Player)!);
+
+    /// <summary>A game is loaded and played: not the title screen (Meitou's main menu, PlayerInterface.TitleOpen) and the world has a player
+    /// (World.Player.Exists). Until then (and on the title screen of a later session) PZA windows and tiny buttons are not shown: a window
+    /// opened or left open there comes back once a game is running. True when the game lacks a member (the old behaviour) and before the first
+    /// frame. <see cref="InGameOverride"/> replaces it (the offline check).</summary>
+    public static bool InGame
+    {
+        get
+        {
+            if (InGameOverride is { } o) return o();
+            if (Player is not { } p) return true;
+            if (Access.TitleOpen?.GetValue(p) is true) return false;
+            return Access.Session is null || Access.Session(p) is not { } s || s.World.Player.Exists;
+        }
+    }
+    /// <summary>For the offline check: replaces <see cref="InGame"/>.</summary>
+    public static Func<bool>? InGameOverride { get; set; }
 
     /// <summary>Called once a frame on the host thread after the windows (a mod's own per-frame work, e.g. its counter line).</summary>
     public static Action? EachFrame { get; set; }
@@ -208,7 +225,8 @@ public static class Access
     public static MethodInfo Steer = null!, BindFaithfulScreen = null!, PointerDown = null!, PointerMove = null!, PointerUp = null!, UiScroll = null!;
     public static AccessTools.FieldRef<object, MyGuiScreenHost> FaithfulScreens = null!;
     public static FieldInfo Width = null!, Height = null!;
-    public static PropertyInfo? UiEditing;
+    public static PropertyInfo? UiEditing, TitleOpen;
+    public static AccessTools.FieldRef<object, Meitou.Game.Host.WorldSession>? Session;
     public static MethodInfo? SelectedIds;
 
     public static List<string> ResolveAll()
@@ -234,6 +252,10 @@ public static class Access
         if (Width?.FieldType != typeof(int) || Height?.FieldType != typeof(int)) missing.Add("fields PlayerInterface.Width / Height");
         UiEditing = AccessTools.Property(PlayerInterface, "UiEditing");
         SelectedIds = AccessTools.Method(PlayerInterface, "SelectedIds", Type.EmptyTypes);
+        // optional (windows show everywhere without them): the title screen and the session, for InGame
+        TitleOpen = AccessTools.Property(PlayerInterface, "TitleOpen") is { PropertyType: var tt } tp && tt == typeof(bool) ? tp : null;
+        Session = AccessTools.Field(PlayerInterface, "Session")?.FieldType == typeof(Meitou.Game.Host.WorldSession)
+            ? AccessTools.FieldRefAccess<Meitou.Game.Host.WorldSession>(PlayerInterface, "Session") : null;
         return missing;
     }
 
