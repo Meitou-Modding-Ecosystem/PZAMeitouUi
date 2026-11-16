@@ -86,6 +86,7 @@ public sealed class PzaWindow(string id, Func<string> layoutXml, bool modal = fa
             if (host.IsOpen(Id)) host.Close(Id);
         }
 
+        ApplyBars();
         bool open = host.IsOpen(Id);
         if (open && !host.CapturesPointer)
         {
@@ -126,6 +127,32 @@ public sealed class PzaWindow(string id, Func<string> layoutXml, bool modal = fa
         if (e.Screen != Id || Guard.Dead(Id)) return;
         if (e.Action == MinimizeAction) { Minimize("the - button"); return; }
         Guard.Run(Id, "event " + e.Action, () => Event?.Invoke(e));
+    }
+
+    /// <summary>Moves a slider (or any scroll bar) to a position from code, e.g. when the value changed by a hotkey. The engine keeps the
+    /// position itself after the player moves the thumb (it overwrites the binding's ScrollOffsets from its own state), so this sets the engine's
+    /// state: host.SetScroll under the bar's "BarKey" marker, read from the last layout. While the window is closed it waits and is applied
+    /// when the bar is laid out again. Moving it this way raises no scroll event.</summary>
+    public void SetSlider(string bar, float position)
+    {
+        _pendingBars[bar] = position;
+        ApplyBars();
+    }
+
+    readonly Dictionary<string, float> _pendingBars = new(StringComparer.Ordinal);
+
+    void ApplyBars()
+    {
+        if (_pendingBars.Count == 0 || _host is not { } host || !IsOpen) return;
+        var frame = host.LastFrame.FirstOrDefault(f => f.Id == Id);
+        if (frame is null) return;
+        foreach (var (bar, pos) in _pendingBars.ToArray())
+        {
+            var c = frame.Controls.FirstOrDefault(x => x.Name == bar && x.Properties.ContainsKey("BarKey"));
+            if (c is null) continue;   // not laid out yet (another tab, or the first frame after an open): keep it
+            host.SetScroll(Id, c.Properties["BarKey"], pos);
+            _pendingBars.Remove(bar);
+        }
     }
 
     /// <summary>Closes the window as a minimize (the mod's tiny button takes over).</summary>

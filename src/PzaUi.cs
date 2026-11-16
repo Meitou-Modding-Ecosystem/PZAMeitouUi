@@ -24,7 +24,7 @@ namespace PZA.MeitouUi;
 public static class PzaUi
 {
     /// <summary>The library's version (written in the log at Install).</summary>
-    public const string Version = "0.2.1";
+    public const string Version = "0.2.2";
 
     /// <summary>Where the library's lines go (the mod sets it, usually to its own log with its prefix).</summary>
     public static Action<string> Log = _ => { };
