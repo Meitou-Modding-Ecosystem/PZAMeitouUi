@@ -22,6 +22,10 @@ public sealed class PzaTinyButton(string id)
     public Func<bool> Visible { get; set; } = () => true;
     /// <summary>A click (press and release without a drag).</summary>
     public Action? Click { get; set; }
+    /// <summary>A second click within 400 ms and 6 px of the first (0.2.4; PZA UI rules: a double click on the tiny button opens the full
+    /// window, as the RE_Kenshi plugins). Runs instead of the second Click; the first Click has already run, so the handler undoes it if
+    /// it changes something (null: every click is a Click).</summary>
+    public Action? DoubleClick { get; set; }
     /// <summary>The "+" beside it (null: no "+").</summary>
     public Action? OpenFull { get; set; }
     /// <summary>The top-left as a fraction of the screen (kept on screen); default the top-right corner, out of the HUD's way.</summary>
@@ -43,7 +47,8 @@ public sealed class PzaTinyButton(string id)
     public Vector2? DragPos { get; internal set; }
 
     bool _dragging, _moved;
-    Vector2 _grab, _pressAt;
+    Vector2 _grab, _pressAt, _lastClickAt;
+    long _lastClickMs = long.MinValue / 2;
     int _logs;
 
     static bool Inside(UiRect r, Vector2 m) => m.X >= r.X && m.Y >= r.Y && m.X < r.X + r.Width && m.Y < r.Y + r.Height;
@@ -67,7 +72,20 @@ public sealed class PzaTinyButton(string id)
         if (button != MouseButton.Left || !_dragging) return;
         PointerMove(m);
         _dragging = false;
-        if (!_moved) { Click?.Invoke(); return; }
+        if (!_moved)
+        {
+            long now = Environment.TickCount64;
+            bool dbl = DoubleClick is not null && now - _lastClickMs < 400 && Vector2.Distance(m, _lastClickAt) < 6;
+            _lastClickMs = dbl ? long.MinValue / 2 : now;
+            _lastClickAt = m;
+            if (dbl)
+            {
+                if (++_logs <= 20) PzaUi.Log($"PZA's Meitou UI: tiny button '{Id}' double-clicked");
+                DoubleClick!.Invoke();
+            }
+            else Click?.Invoke();
+            return;
+        }
         if (DragPos is { } raw && Viewport.Width > 0 && Viewport.Height > 0)
         {
             var p = new Vector2(Math.Clamp(raw.X, 0, Math.Max(0, Viewport.Width - Size.X)), Math.Clamp(raw.Y, 0, Math.Max(0, Viewport.Height - Size.Y)));
