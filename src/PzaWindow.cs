@@ -252,8 +252,12 @@ public sealed class PzaWindow(string id, Func<string> layoutXml, bool modal = fa
     }
 }
 
-/// <summary>Changing a mod setting from code the way the Settings page does (through its ModSettingsGroup: the page shows it and Meitou keeps it in
-/// meitou.user.json as for a player's change), falling back to the property when the mod has no group yet.</summary>
+/// <summary>Changing a mod setting from code through its ModSettingsGroup (the Settings page shows the new value), falling back to the property when
+/// the mod has no group yet. 0.3.1: Meitou keeps a mod value in meitou.user.json ONLY when the player changes it on the Settings page
+/// (ModSettingsRows.KeepModSetting); ModSetting.Set from the mod only sets the property and raises Changed. So a window drag, a slider or a tiny-button
+/// move was lost at every restart (the user, 2026-11-17: "SlowMo ALWAYS open front and center at 0.50x"). <see cref="Keep"/> fixes that: the group's
+/// values go to "&lt;mod id&gt;.settings.json" in the mod's own folder on EVERY Changed (the page's and the mod's alike, so the file always holds the
+/// latest value), and are put back right after AddSettings (after Meitou's own saved values).</summary>
 public static class PzaSettings
 {
     public static void Set(Meitou.Modding.ModSettingsGroup? group, object target, string key, object value)
@@ -262,4 +266,66 @@ public static class PzaSettings
         if (s is not null) s.Set(value);
         else target.GetType().GetProperty(key)!.SetValue(target, value);
     }
+
+    /// <summary>The file a mod's kept values live in.</summary>
+    public static string FileFor(string folder, string modId) => Path.Combine(folder, modId + ".settings.json");
+
+    /// <summary>Call once, right after context.AddSettings (before the mod reads its settings or subscribes to Changed): puts the kept values
+    /// back, then keeps every later change. Returns lines for the mod's log. Never throws.</summary>
+    public static List<string> Keep(Meitou.Modding.ModSettingsGroup group, string folder)
+    {
+        var lines = new List<string>();
+        string path = FileFor(folder, group.ModId), name = Path.GetFileName(path);
+        int applied = 0;
+        var refused = new List<string>();
+        try
+        {
+            if (File.Exists(path))
+            {
+                var saved = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path)) ?? [];
+                foreach (var (key, text) in saved)
+                {
+                    var s = group.Settings.FirstOrDefault(x => x.Key == key);
+                    object? v = s is null ? null : Parse(s, text);
+                    if (v is null) { refused.Add(key); continue; }
+                    if (s!.Text == text) continue;
+                    try { s.Set(v); applied++; }
+                    catch { refused.Add(key); }
+                }
+            }
+            lines.Add($"PZA's Meitou UI: settings kept in {name}: {applied} value(s) put back" + (refused.Count > 0 ? $"; ignored {string.Join(", ", refused)}" : ""));
+        }
+        catch (Exception e)
+        {
+            lines.Add($"PZA's Meitou UI: could not read {name} ({e.GetType().Name}: {e.Message}); starting from Meitou's saved settings");
+        }
+        bool failed = false;
+        group.Changed += _ =>
+        {
+            try { Save(group, path); }
+            catch (Exception e)
+            {
+                if (failed) return;
+                failed = true;
+                PzaUi.Log($"PZA's Meitou UI: could not write {name} ({e.GetType().Name}: {e.Message}); changes made in the game are not kept");
+            }
+        };
+        return lines;
+    }
+
+    /// <summary>Every setting's current value (invariant text, as Meitou's own file) to the file; written to a temporary file first.</summary>
+    public static void Save(Meitou.Modding.ModSettingsGroup group, string path)
+    {
+        var all = group.Settings.ToDictionary(s => s.Key, s => s.Text, StringComparer.Ordinal);
+        string tmp = path + ".tmp";
+        File.WriteAllText(tmp, System.Text.Json.JsonSerializer.Serialize(all, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        File.Move(tmp, path, overwrite: true);
+    }
+
+    static object? Parse(Meitou.Modding.ModSetting s, string text) => s.Kind switch
+    {
+        Meitou.Modding.ModSettingKind.Switch => bool.TryParse(text, out bool b) ? b : null,
+        Meitou.Modding.ModSettingKind.Slider => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double d) && double.IsFinite(d) ? d : null,
+        _ => s.Options.Contains(text) ? text : null,
+    };
 }
