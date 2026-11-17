@@ -2,7 +2,7 @@
 
 Author: PZA. Licence: GPLv3 or later. The shared window library for PZA's Meitou mods (MeitouClient 0.20.1): real Kenshi windows on Meitou's own
 window engine (`MyGuiScreenHost`) and the PZA tiny HUD button, with everything the PZA UI rules ask for. Proven in game by PZA's UI Probe.
-Version 0.2.3, early: expect changes.
+Version 0.3.0, early: expect changes.
 
 **A source library.** Each mod compiles these files into its own assembly, so each mod has its own copy, its own state and its own patches;
 two mods can never clash:
@@ -50,7 +50,9 @@ public void Initialize(ModContext context)
 |---|---|
 | `PzaUi.cs` | `Install` (resolves the game's members by name; patches `PlayerInterface.Steer`, `ScreenRouter.BindFaithfulScreen`, and when tiny buttons are used the four pointer calls; registers the HUD), `Add`, `Frame`, `Typing`, `EachFrame`, `Guard` (a throw is logged and never reaches the game; 50 faults switch that window off for the session) |
 | `PzaWindow.cs` | one MyGUI window: open / close / toggle, `Minimizable` (0.2.1: the "-" or a double click on the title closes it and calls `Minimized`; the tiny button takes over) (queued, applied on the next frame), `Bind`, `Event`, the place as a fraction of the screen (`LoadPlace` / `SavePlace`, saved after a drag and at close), `OpenChanged`; helpers `Enable`, `Tick`, `Tooltip`, `TabText`, `Props`, `Lines`; `PzaSettings.Set` |
-| `PzaLayout.cs` | MyGUI layout XML with Kenshi's skins: `Window`, `WindowMin` (with Kenshi's minimize button), `Text`, `Button`, `Tick`, `Slider`, `Edit`, `List`, `Tabs`, `HelpPage`, `Portrait`, `Doc` |
+| `PzaLayout.cs` | MyGUI layout XML with Kenshi's skins: `Window`, `WindowMin` (with Kenshi's minimize button), `Text`, `Button`, `Tick`, `Slider`, `Edit`, `List`, `Tabs`, `HelpPage`, `HelpList` and `TextList` (0.3.0, scrolling), `Portrait`, `Doc`; tab pages start below the tab strip (0.3.0: Meitou lays a page over the whole TabControl) |
+| `PzaFont.cs` | (0.3.0) text measured from the font file itself, the way Meitou draws a MyGUI font resource in the player's language (Kenshi's locale fonts: Exo2, ume-pgs5, TTZhongYuanJ); equal to FreeType to the pixel in en / ru / zh / ja (PZA's UI Probe check); wraps at spaces and between CJK characters |
+| `PzaFit.cs` | (0.3.0) text that fits: `PzaWindow.Paragraphs` (long text into a scrolling list, wrapped at its real width), `PzaFit.RowFits` (for a mod's own wrapping), punctuation a language's font lacks swapped for a plain one, and after every bind a one-line text still too wide wraps (room for two lines) or is cut with "..." with the whole text in its tooltip (logged once) |
 | `PzaStrings.cs` | the four-language string table (same file format as the RE_Kenshi plugins', placeholders checked, never a format string) |
 | `PzaPortrait.cs` | a character's own face in a window (`PzaLayout.Portrait` + `PzaPortrait.Face(b, name, characterId)`), see below |
 | `PzaTinyButton.cs` | the tiny HUD button (drag, click on release, wheel opacity 0.35-1 that does not zoom the camera, optional "+") and `PzaHud` |
@@ -80,6 +82,22 @@ bar draws it (not a CHARACTER record's default look). The library adds the chara
 Limits: a character not loaded in the world shows nothing; at most 12 faces at once per mod; the picture appears a frame or two after the
 first bind. If Meitou lacks a member, `Install` logs "no character faces" and the windows work without them. `PzaUi.SelectedCharacters()`
 gives the player's selection.
+
+## Text fits its window (0.3.0)
+
+The user, 2026-11-17: the text of every PZA Meitou window spilled out. Meitou draws text in the player's language's font, and the layouts were
+made by eye in English. Now:
+
+- **Long text scrolls.** `PzaLayout.HelpList("TabHelp", "lstHelp")` + `window.Paragraphs(b, "lstHelp", text)`: one help page however long (no
+  "More" pages), wrapped at the list's real width in the real font of the player's language.
+- **Tab pages start below the strip.** Every `TabItem` is placed under Kenshi_TabControl's strip (35 px at 1080 lines, scaled).
+- **The check.** `check\PzaFitCheck.cs`, compiled into every mod's offline check tool (`<Compile Include="..\..\..\..\PZAMeitouUi\check\*.cs" />`):
+  the window in en / ru / zh / ja at 1280x720, 1920x1080 and 2560x1440, every tab clicked, every text (labels, buttons, tab captions, the title,
+  every line of every list) measured against its widget with the fit pass OFF, plus a glyph the font lacks and a page control under the tab
+  strip. Each problem names the language, screen, tab, widget, text and string key. PZA's UI Probe's check plants a too-long label and expects it
+  named in en and ja, and checks PzaFont against FreeType. With `PZA_FIT_DUMP=<folder>` it writes each page's layout for
+  `checkit_pictures.py` (pictures in each language's Kenshi font).
+- What could make it lie: a player's InterfaceScale above 1 or a bigger `font size2` setting (text larger than measured).
 
 ## Checked
 

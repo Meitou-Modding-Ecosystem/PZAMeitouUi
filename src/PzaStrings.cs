@@ -95,6 +95,22 @@ public sealed class PzaStrings((string Key, string En)[] table)
     /// <summary>The text for a key (English when missing; the key itself when unknown, so a gap shows).</summary>
     public string T(string key) => _text.TryGetValue(key, out var s) ? s : _en.TryGetValue(key, out var e) ? e : key;
 
+    /// <summary>The key whose text (in the language in use) <paramref name="shown"/> is, {n} matching anything; null when none (offline checks
+    /// name the string this way).</summary>
+    public string? KeyOf(string shown)
+    {
+        foreach (var k in _en.Keys) if (T(k) == shown) return k;
+        foreach (var k in _en.Keys)
+        {
+            string t = T(k);
+            if (!Placeholder.IsMatch(t)) continue;
+            string pattern = "^" + Placeholder.Replace(Regex.Escape(t).Replace("\\{", "{"), ".*") + "$";
+            if (Regex.IsMatch(shown, pattern, RegexOptions.Singleline)) return k;
+        }
+        foreach (var k in _en.Keys) if (T(k).Length > 12 && shown.Contains(T(k), StringComparison.Ordinal)) return k + " (part)";
+        return null;
+    }
+
     /// <summary>T(key) with {1}..{9} replaced (never a format string).</summary>
     public string TF(string key, params string[] args)
     {

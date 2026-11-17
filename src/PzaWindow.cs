@@ -47,6 +47,21 @@ public sealed class PzaWindow(string id, Func<string> layoutXml, bool modal = fa
     Vector2 _lastOffset;
     int _binds;
 
+    /// <summary>The screen height of the last frame (fonts are sized by it).</summary>
+    public int LastHeight { get; private set; } = 1080;
+
+    /// <summary>The width of a list's rows' text as last laid out (null before the list was drawn, or with no rows).</summary>
+    public float? RowWidth(string list)
+    {
+        var frame = _host?.LastFrame.FirstOrDefault(f => f.Id == Id);
+        var row = frame?.Controls.FirstOrDefault(c => c.Name.StartsWith(list + "@row", StringComparison.Ordinal));
+        if (row is null) return null;
+        return PzaFit.TextRect(PzaFit.Resources(_host!), row, LastHeight)?.Width ?? row.Bounds.Width;
+    }
+
+    /// <summary>The host the window was last framed on.</summary>
+    internal MyGuiScreenHost? Host => _host;
+
     public bool IsOpen => _host is not null && _host.IsRegistered(Id) && _host.IsOpen(Id);
     public void Open() { _wantOpen = true; _wantClose = false; }
     public void Close() { _wantClose = true; _wantOpen = false; }
@@ -56,6 +71,7 @@ public sealed class PzaWindow(string id, Func<string> layoutXml, bool modal = fa
     public void Frame(MyGuiScreenHost host, int width, int height)
     {
         if (Guard.Dead(Id)) return;
+        if (height > 0) LastHeight = height;
         if (!ReferenceEquals(host, _host))
         {
             _host = host;   // a new host (a new session's interface): register again
@@ -134,6 +150,7 @@ public sealed class PzaWindow(string id, Func<string> layoutXml, bool modal = fa
         // the minimize button is a template part whose event goes to its owner: "<root>@minimize" names the action it raises
         if (Minimizable) b.Actions[_root + "@minimize"] = MinimizeAction;
         Bind?.Invoke(b);
+        if (_host is { } host) { PzaFit.Substitute(this, b, host); PzaFit.Apply(this, b, host); }
     }
 
     void OnEvent(MyGuiEvent e)
@@ -222,6 +239,10 @@ public sealed class PzaWindow(string id, Func<string> layoutXml, bool modal = fa
         foreach (var (k, v) in props) merged[k] = v;
         b.Properties[name] = merged;
     }
+
+    /// <summary>Long text into a scrolling list (PzaLayout.HelpList / TextList): its paragraphs wrapped at the list's real row width in the real
+    /// font of the player's language (PzaFont), a blank row between paragraphs kept. Before the list was first drawn, about 50 characters a row.</summary>
+    public void Paragraphs(UiBindings b, string list, string text) => Lines(b, list, PzaFit.Paragraphs(this, list, text));
 
     /// <summary>A list's lines (ids "0".."n-1") and its selected line (-1 = none).</summary>
     public static void Lines(UiBindings b, string list, IEnumerable<string> lines, int selected = -1)

@@ -24,11 +24,48 @@ public static class PzaLayout
 
     /// <summary>A Kenshi window (Kenshi_WindowCX: caption, close chrome, title-bar drag), placed as a fraction of the screen.</summary>
     public static string Window(string name, string caption, double x, double y, double w, double h, params string[] children) =>
-        $"<Widget type=\"Window\" skin=\"Kenshi_WindowCX\" {Pos(x, y, w, h)} layer=\"Window\" name=\"{Esc(name)}\">{Prop("Caption", caption)}{string.Concat(children)}</Widget>";
+        PagesBelowStrip($"<Widget type=\"Window\" skin=\"Kenshi_WindowCX\" {Pos(x, y, w, h)} layer=\"Window\" name=\"{Esc(name)}\">{Prop("Caption", caption)}{string.Concat(children)}</Widget>", h);
 
     /// <summary>A Kenshi window with a minimize button beside its close button (Kenshi_WindowCXM); use with PzaWindow { Minimizable = true }.</summary>
     public static string WindowMin(string name, string caption, double x, double y, double w, double h, params string[] children) =>
-        $"<Widget type=\"Window\" skin=\"Kenshi_WindowCXM\" {Pos(x, y, w, h)} layer=\"Window\" name=\"{Esc(name)}\">{Prop("Caption", caption)}{string.Concat(children)}</Widget>";
+        PagesBelowStrip($"<Widget type=\"Window\" skin=\"Kenshi_WindowCXM\" {Pos(x, y, w, h)} layer=\"Window\" name=\"{Esc(name)}\">{Prop("Caption", caption)}{string.Concat(children)}</Widget>", h);
+
+    /// <summary>Kenshi_TabControl's tab strip and Kenshi_WindowCX's title bar, pixels at 1080 lines (they scale with the screen height in game:
+    /// the binding's TemplateScale). Measured on a MyGuiScreenHost with Kenshi's skins, 2026-11-17.</summary>
+    public const double TabStripPx = 35, TitleBarPx = 30, PageGapPx = 5;
+
+    /// <summary>Meitou lays a TabItem over its whole TabControl, strip included, so a page's first row sat under the tabs (0.3.0: found by
+    /// PzaFitCheck). Each TabItem is moved below the strip: its top is the strip's height as a fraction of the TabControl's height on screen
+    /// (the window's height fraction x 1080 lines, less the title bar, times each parent's height fraction). The pages' own positions stay
+    /// fractions of the (now smaller) page.</summary>
+    static string PagesBelowStrip(string xml, double windowH)
+    {
+        if (!xml.Contains("\"TabControl\"", StringComparison.Ordinal)) return xml;
+        var root = System.Xml.Linq.XElement.Parse(xml);
+        void Walk(System.Xml.Linq.XElement el, double px)
+        {
+            foreach (var child in el.Elements("Widget"))
+            {
+                double h = px * PosH(child);
+                if ((string?)child.Attribute("type") == "TabControl" && h > 0)
+                {
+                    double top = Math.Min(0.5, (TabStripPx + PageGapPx) / h);
+                    foreach (var page in child.Elements("Widget").Where(p => (string?)p.Attribute("type") == "TabItem"))
+                        page.SetAttributeValue("position_real", $"0 {F(top)} 1 {F(1 - top)}");
+                    foreach (var page in child.Elements("Widget")) Walk(page, h * (1 - top));
+                }
+                else Walk(child, h);
+            }
+        }
+        Walk(root, windowH * 1080 - TitleBarPx);
+        return root.ToString(System.Xml.Linq.SaveOptions.DisableFormatting);
+    }
+
+    static double PosH(System.Xml.Linq.XElement w)
+    {
+        var parts = ((string?)w.Attribute("position_real") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 4 && double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : 1;
+    }
 
     /// <summary>A text line or block (Kenshi_TextboxStandardText). wrap = word wrap (top-aligned).</summary>
     public static string Text(string name, double x, double y, double w, double h, bool wrap = false, string? align = null)
@@ -74,6 +111,14 @@ public static class PzaLayout
     public static string Portrait(string name, double x, double y, double w, double h) =>
         $"<Widget type=\"ImageBox\" skin=\"ImageBox\" {Pos(x, y, w, h)} name=\"{Esc(name)}\"/>";
 
-    /// <summary>A help page as a tab: one wrapped text filling the page (PZA UI rules 11).</summary>
+    /// <summary>A help page as a tab: one wrapped text filling the page (PZA UI rules 11). Only for a short help: a longer one (or one that
+    /// grows in another language) spills; use <see cref="HelpList"/>.</summary>
     public static (string, string[]) HelpPage(string page, string textName) => (page, [Text(textName, 0.03, 0.03, 0.94, 0.94, wrap: true)]);
+
+    /// <summary>A help page as a tab that scrolls (0.3.0): a list filling the page; fill it with PzaWindow.Paragraphs(b, listName, text), which
+    /// wraps the text at the list's real width in the real font of the player's language. One page, however long: no "More" pages.</summary>
+    public static (string, string[]) HelpList(string page, string listName) => (page, [List(listName, 0.02, 0.02, 0.96, 0.96)]);
+
+    /// <summary>A scrolling text anywhere (a list): fill it with PzaWindow.Paragraphs.</summary>
+    public static string TextList(string name, double x, double y, double w, double h) => List(name, x, y, w, h);
 }
