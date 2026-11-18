@@ -1,0 +1,43 @@
+<Project>
+  <!-- PZA's Meitou UI fuzz kit: what every PZA Meitou mod's fuzz harness shares (author PZA, GPLv3 or later). A harness is
+         <Project Sdk="Microsoft.NET.Sdk">
+           <Import Project="..\..\..\PZAMeitouUi\fuzz\fuzz.props" />
+           <ItemGroup><Compile Include="..\..\mod\src\**\*.cs" /></ItemGroup>
+         </Project>
+       plus its own Program.cs (PzaFuzz.Run with the mod's targets). It compiles the mod's own source (internals included), the shared library and
+       this kit into one console program, against the .NET 11 framework and the Meitou assemblies inside a Meitou release (never copied into git).
+       Run it with ..\..\..\PZAMeitouUi\fuzz\run_fuzz.ps1 -Repo <repo> (or the mod's build.ps1 -Fuzz); it never starts the game. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>fuzz</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <NoStdLib>true</NoStdLib>
+    <NoCompilerStandardLib>true</NoCompilerStandardLib>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <UseAppHost>false</UseAppHost>
+    <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants>$(DefineConstants);PZA_FUZZ</DefineConstants>
+    <NoWarn>$(NoWarn);CA1416;CS0162;CS0168;CS0169;CS0219;CS0414;CS0649;CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8625;CS8981</NoWarn>
+    <Deterministic>true</Deterministic>
+    <PzaFuzzKit>$(MSBuildThisFileDirectory)</PzaFuzzKit>
+    <!-- MeitouDir: passed by run_fuzz.ps1 (from the mod's local.props or this folder's local.props, both git-ignored) -->
+  </PropertyGroup>
+  <ItemGroup>
+    <GameRef Include="$(MeitouDir)\System*.dll;$(MeitouDir)\mscorlib.dll;$(MeitouDir)\netstandard.dll;$(MeitouDir)\Meitou*.dll;$(MeitouDir)\WindowsBase.dll"
+             Exclude="$(MeitouDir)\*Native*.dll" />
+    <Reference Include="@(GameRef)"><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(MeitouDir)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Compile Include="$(PzaFuzzKit)*.cs" Link="PzaFuzzKit\%(Filename)%(Extension)" />
+    <Compile Include="$(PzaFuzzKit)..\src\*.cs" Link="PzaMeitouUi\%(Filename)%(Extension)" />
+    <Compile Remove="bin\**;obj\**" />
+  </ItemGroup>
+  <Target Name="PzaFuzzCheckMeitouDir" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(MeitouDir)\MeitouClient.dll')" Text="MeitouClient.dll not found in MeitouDir='$(MeitouDir)'. Pass -p:MeitouDir=..." />
+  </Target>
+</Project>

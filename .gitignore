@@ -25,3 +25,5 @@ meitou.user.json
 *.dds
 *.mod
 gamedata.base
+# your Meitou release for the fuzz kit (fuzz/local.props)
+local.props

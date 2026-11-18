@@ -150,7 +150,7 @@ public sealed class PzaWindow(string id, Func<string> layoutXml, bool modal = fa
         // the minimize button is a template part whose event goes to its owner: "<root>@minimize" names the action it raises
         if (Minimizable) b.Actions[_root + "@minimize"] = MinimizeAction;
         Bind?.Invoke(b);
-        if (_host is { } host) { PzaFit.Substitute(this, b, host); PzaFit.Apply(this, b, host); }
+        if (_host is { } host) { PzaFit.Substitute(this, b, host); PzaFit.Apply(this, b, host); PzaFit.ListRows(this, b, host); }
     }
 
     void OnEvent(MyGuiEvent e)

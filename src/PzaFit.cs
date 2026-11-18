@@ -152,6 +152,27 @@ public static class PzaFit
         }
     }
 
+    /// <summary>Meitou's row padding in a list without a line skin: TextPadding "4 2 4 2" (UiDocument.Widgets ListRows), 2 px above and below.</summary>
+    const float RowPadding = 4;
+
+    /// <summary>List rows as tall as the text Meitou draws in them. A ListBox row is the skin's HeightLine (Kenshi's size) unless the binding sets
+    /// "LineHeight" (pixels; Meitou's own jobs list does), but Meitou draws its text taller than Kenshi's, so every PZA list clipped the
+    /// tails of g / y / p and wrapped help lines overlapped (seen at 4K, 2026-11-18: "squad, by" drawn as "souad. bv"). A list whose
+    /// binding already sets LineHeight keeps it.</summary>
+    internal static void ListRows(PzaWindow w, UiBindings b, MyGuiScreenHost host)
+    {
+        if (b.Lists.Count == 0) return;
+        var font = Font(Resources(host), StandardFont, w.LastHeight);
+        if (font is null) return;
+        string px = Px(MathF.Ceiling(font.LineHeight + RowPadding));
+        foreach (var list in b.Lists.Keys.ToArray())
+        {
+            if (b.Properties.TryGetValue(list, out var p) && p.ContainsKey("LineHeight")) continue;
+            PzaWindow.Props(b, list, ("LineHeight", px));
+            Once(w, list, $"list rows {px} px (font line {Px(font.LineHeight)} px)");
+        }
+    }
+
     static void Once(PzaWindow w, string name, string what)
     {
         if (s_logged.Add(w.Id + "/" + name + "/" + Lang)) PzaUi.Log($"PZA's Meitou UI: fit '{w.Id}' {name}: {what}");

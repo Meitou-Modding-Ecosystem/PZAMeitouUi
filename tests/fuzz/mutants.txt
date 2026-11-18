@@ -1,0 +1,84 @@
+# PZA's Meitou UI: known bugs the fuzz harness must catch (fuzz\mutate.py). Author: PZA. One block per mutant, verbatim.
+# Header: ID | file from the folder that holds the repos | fuzz targets to run | what it plants
+
+@@ UI-keep-nan | PZAMeitouUi\src\PzaWindow.cs | settings.keep | a kept slider value that is not a finite number is put back
+<<<
+CultureInfo.InvariantCulture, out double d) && double.IsFinite(d) ? d : null,
+===
+CultureInfo.InvariantCulture, out double d) ? d : null,
+>>>
+
+@@ UI-keep-throw | PZAMeitouUi\src\PzaWindow.cs | settings.keep | a broken kept file throws out of Keep (no catch)
+<<<
+        catch (Exception e)
+        {
+            lines.Add($"PZA's Meitou UI: could not read
+===
+        catch (Exception e) when (e is IOException)
+        {
+            lines.Add($"PZA's Meitou UI: could not read
+>>>
+
+@@ UI-keep-save | PZAMeitouUi\src\PzaWindow.cs | settings.roundtrip | a changed value is not written to the kept file
+<<<
+            try { Save(group, path); }
+===
+            try { if (group.Settings.Count > 99) Save(group, path); }
+>>>
+
+@@ UI-str-ctl | PZAMeitouUi\src\PzaStrings.cs | strings.load | control characters and tabs kept in a translation
+<<<
+                if (c == '\t' || c < 0x20) { bad = true; break; }
+===
+                if (c == '\0') { bad = true; break; }
+>>>
+
+@@ UI-str-ph | PZAMeitouUi\src\PzaStrings.cs | strings.load | a translation with other {n} placeholders than English used
+<<<
+            if (PlaceholderSet(val) != PlaceholderSet(english)) { refused.Add($"line {n + 1} {key} (placeholders differ from English)"); continue; }
+===
+            if (val.Length > 9999) { refused.Add($"line {n + 1} {key} (placeholders differ from English)"); continue; }
+>>>
+
+@@ UI-wrap-width | PZAMeitouUi\src\PzaFit.cs | fit.charwrap | the character wrap lets rows run past the width
+<<<
+                if (line.Length > 0 && line.Length + 1 + word.Length > width) { rows.Add(line.ToString()); line.Clear(); }
+===
+                if (line.Length > 0 && line.Length + 1 + word.Length > width + 3) { rows.Add(line.ToString()); line.Clear(); }
+>>>
+
+@@ UI-font-pair | PZAMeitouUi\src\PzaFont.cs | font.wrap | a lone surrogate half throws while measuring (reverts the 2026-11-18 fix)
+<<<
+i + 1 < line.Length && char.IsLowSurrogate(line[i + 1]) ? char.ConvertToUtf32
+===
+i + 1 < line.Length ? char.ConvertToUtf32
+>>>
+
+@@ UI-font-upem | PZAMeitouUi\src\PzaFont.cs | font.parse | a font with unitsPerEm 0 accepted (divides by zero)
+<<<
+        if (UnitsPerEm < 16 || UnitsPerEm > 16384) throw new InvalidDataException("unitsPerEm out of range");
+===
+        if (UnitsPerEm > 16384) throw new InvalidDataException("unitsPerEm out of range");
+>>>
+
+@@ UI-font-hmtx | PZAMeitouUi\src\PzaFont.cs | font.parse | a short hmtx read past its end
+<<<
+        return _metrics > 0 && i >= 0 && at >= 0 && at + 2 <= Bytes.Length ? U16(Bytes, (int)at) : 0;
+===
+        return _metrics > 0 ? U16(Bytes, (int)at) : 0;
+>>>
+
+@@ UI-font-nan | PZAMeitouUi\src\PzaFont.cs | font.wrap | a NaN width wraps nothing (one endless line)
+<<<
+        if (float.IsNaN(width)) width = 0;   // a layout not measured yet: one character a line, never one endless line (fuzz 2026-11-18)
+===
+>>>
+
+@@ UI-font-cut | PZAMeitouUi\src\PzaFont.cs | font.wrap | Ellipsize keeps one character too many
+<<<
+        while (n > 0 && Width(text[..n].TrimEnd() + "...") > width) n--;
+        return text[..n].TrimEnd() + "...";
+===
+        while (n > 0 && Width(text[..n].TrimEnd() + "...") > width) n--;
+        return text[..Math.Min(text.Length, n + 1)].TrimEnd() + "...";
+>>>

@@ -60,7 +60,8 @@ public sealed class PzaFont
         line = StripColours(line);
         for (int i = 0; i < line.Length; i++)
         {
-            int cp = char.IsHighSurrogate(line[i]) && i + 1 < line.Length ? char.ConvertToUtf32(line[i], line[++i]) : line[i];
+            // a pair makes one code point; a lone half (a cut through an emoji, a broken name) is measured as itself (fuzz 2026-11-18: it threw)
+            int cp = char.IsHighSurrogate(line[i]) && i + 1 < line.Length && char.IsLowSurrogate(line[i + 1]) ? char.ConvertToUtf32(line[i], line[++i]) : line[i];
             if (cp < 0x20 && cp != '\t') continue;
             if (cp == '\t') { float tab = _spec.TabWidth > 0 ? _spec.TabWidth : 8 * Advance(' ', _emFaithful); faithful += tab; meitou += tab; continue; }
             int glyph = _file.Glyph(Allowed(cp) ? cp : _spec.SubstituteCode >= 0 ? _spec.SubstituteCode : 0);
@@ -88,6 +89,7 @@ public sealed class PzaFont
     /// a word wider than the line is broken by characters. An empty paragraph stays an empty line.</summary>
     public List<string> Wrap(string text, float width)
     {
+        if (float.IsNaN(width)) width = 0;   // a layout not measured yet: one character a line, never one endless line (fuzz 2026-11-18)
         var lines = new List<string>();
         foreach (var para in text.Replace("\\n", "\n").Replace("\r", "").Split('\n'))
         {
@@ -121,6 +123,7 @@ public sealed class PzaFont
     /// <summary>The longest start of <paramref name="text"/> (one line) that fits <paramref name="width"/> with "..." after it.</summary>
     public string Ellipsize(string text, float width)
     {
+        if (float.IsNaN(width)) width = 0;
         if (Width(text) <= width) return text;
         int n = text.Length;
         while (n > 0 && Width(text[..n].TrimEnd() + "...") > width) n--;
@@ -230,6 +233,8 @@ sealed class PzaFontFile
         var hhea = Table(b, "hhea") ?? throw new InvalidDataException("no hhea");
         _hmtx = (Table(b, "hmtx") ?? throw new InvalidDataException("no hmtx")).Offset;
         UnitsPerEm = U16(b, head.Offset + 18);
+        // the TrueType range is 16..16384; 0 divided every measure by zero (fuzz 2026-11-18, a broken file)
+        if (UnitsPerEm < 16 || UnitsPerEm > 16384) throw new InvalidDataException("unitsPerEm out of range");
         _ascender = I16(b, hhea.Offset + 4); _descender = I16(b, hhea.Offset + 6);
         _metrics = U16(b, hhea.Offset + 34);
         if (Table(b, "OS/2") is { Length: >= 78 } os2) { _winAscent = U16(b, os2.Offset + 74); _winDescent = U16(b, os2.Offset + 76); }
@@ -242,10 +247,16 @@ sealed class PzaFontFile
 
     public static PzaFontFile? Read(string path)
     {
-        BadBytecode = Path.GetFileName(path).Equals("ume-pgs5.ttf", StringComparison.OrdinalIgnoreCase);
-        try { return new PzaFontFile(File.ReadAllBytes(path)); }
-        catch (Exception e) when (e is IOException or InvalidDataException or IndexOutOfRangeException or ArgumentException or UnauthorizedAccessException)
-        { return null; }
+        try { return Parse(File.ReadAllBytes(path), Path.GetFileName(path)); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>The font in <paramref name="bytes"/>; null when it is not a font this reader can measure with (the fuzz kit feeds it broken files).</summary>
+    internal static PzaFontFile? Parse(byte[] bytes, string fileName = "")
+    {
+        BadBytecode = fileName.Equals("ume-pgs5.ttf", StringComparison.OrdinalIgnoreCase);
+        try { return new PzaFontFile(bytes); }
+        catch (Exception e) when (e is InvalidDataException or IndexOutOfRangeException or ArgumentException or OverflowException) { return null; }
     }
 
     public int Glyph(int cp) => _cmap.TryGetValue(cp, out int g) ? g : 0;
@@ -253,7 +264,8 @@ sealed class PzaFontFile
     public int Advance(int glyph)
     {
         int i = Math.Min(glyph, _metrics - 1);
-        return _metrics > 0 ? U16(Bytes, _hmtx + 4 * i) : 0;
+        long at = _hmtx + 4L * i;   // a short or misplaced hmtx: no advance (fuzz 2026-11-18: it threw while measuring)
+        return _metrics > 0 && i >= 0 && at >= 0 && at + 2 <= Bytes.Length ? U16(Bytes, (int)at) : 0;
     }
 
     /// <summary>MyGUI's line height at <paramref name="em"/> pixels (KenshiFontSize's default height).</summary>
@@ -304,12 +316,13 @@ sealed class PzaFontFile
         }
         else
         {
-            long groups = U32(b, best + 12);
-            for (long gi = 0; gi < groups; gi++)
+            // capped: a broken group count or range could otherwise map millions of code points per group (seconds, hundreds of MB)
+            long groups = Math.Min(U32(b, best + 12), (b.Length - (long)best) / 12);
+            for (long gi = 0; gi < groups && _cmap.Count <= 0x110000; gi++)
             {
                 int at = best + 16 + (int)(12 * gi);
                 long start = U32(b, at), end = U32(b, at + 4), glyph = U32(b, at + 8);
-                for (long c = start; c <= end && c <= 0x10FFFF; c++) _cmap[(int)c] = (int)(glyph + c - start);
+                for (long c = start; c <= end && c <= 0x10FFFF && _cmap.Count <= 0x110000; c++) _cmap[(int)c] = (int)(glyph + c - start);
             }
         }
     }

@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- PZA's Meitou UI: the library's own fuzz harness (author PZA, GPLv3 or later). Run: ..\..\fuzz\run_fuzz.ps1 -Repo ..\.. -->
+  <Import Project="..\..\..\PZAMeitouUi\fuzz\fuzz.props" />
+</Project>
