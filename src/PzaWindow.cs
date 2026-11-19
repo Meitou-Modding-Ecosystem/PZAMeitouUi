@@ -247,9 +247,28 @@ public sealed class PzaWindow(string id, Func<string> layoutXml, bool modal = fa
     /// <summary>A list's lines (ids "0".."n-1") and its selected line (-1 = none).</summary>
     public static void Lines(UiBindings b, string list, IEnumerable<string> lines, int selected = -1)
     {
-        b.Lists[list] = lines.Select((s, i) => new UiListItem(i.ToString(CultureInfo.InvariantCulture), s)).ToList();
+        b.Lists[list] = lines.Select((s, i) => Item(i.ToString(CultureInfo.InvariantCulture), s)).ToList();
         if (selected >= 0) b.SelectedItems[list] = selected;
     }
+
+    /// <summary>A list row through whichever constructor the RUNNING Meitou has. 0.3.2: Meitou 0.21 gave UiListItem a fifth field (Colour), so
+    /// `new UiListItem(id, caption)` compiled against 0.20.1 (its four-field constructor, the optional ones filled in) threw MissingMethodException
+    /// on 0.21+: every window with a list (the Help pages) faulted 50 times and stayed off for the session (headless run on 0.22.1, 2026-11-19).
+    /// Here the constructor is looked up once at run time and its optional fields get their defaults.</summary>
+    public static UiListItem Item(string id, string caption)
+    {
+        s_itemCtor ??= typeof(UiListItem).GetConstructors()
+            .Where(c => { var p = c.GetParameters(); return p.Length >= 2 && p[0].ParameterType == typeof(string) && p[1].ParameterType == typeof(string)
+                && p.Skip(2).All(x => x.IsOptional); })
+            .OrderBy(c => c.GetParameters().Length).First();
+        var ps = s_itemCtor.GetParameters();
+        var args = new object?[ps.Length];
+        args[0] = id; args[1] = caption;
+        for (int i = 2; i < ps.Length; i++) args[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue : null;
+        return (UiListItem)s_itemCtor.Invoke(args);
+    }
+
+    static System.Reflection.ConstructorInfo? s_itemCtor;
 }
 
 /// <summary>Changing a mod setting from code through its ModSettingsGroup (the Settings page shows the new value), falling back to the property when
