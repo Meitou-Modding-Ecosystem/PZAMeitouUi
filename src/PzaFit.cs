@@ -53,8 +53,27 @@ public static class PzaFit
     {
         if (res is null) return c.Bounds;
         if (!res.Skins.TryGetValue(c.Skin, out var skin) || !skin.Parts.Any(p => p.Type is "SimpleText" or "EditText")) return null;
-        return UiTextLayout.ContentRect(res, c);   // MeitouClient 0.20.1: the skin's text part aligned in the bounds, less TextPadding
+        return ContentRect(res, c);   // the skin's text part aligned in the bounds, less TextPadding
     }
+
+    /// <summary>UiTextLayout.ContentRect through whichever overload the RUNNING Meitou has. 0.3.2: Meitou 0.21+ added an optional `scale`
+    /// parameter, so the 0.20.1 two-argument call threw MissingMethodException there (every bind of a window with text fitting faulted; after 50
+    /// the window stayed off). The optional parameters get their defaults.</summary>
+    static UiRect ContentRect(MyGuiResources res, UiControl c)
+    {
+        s_contentRect ??= typeof(UiTextLayout).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(m => m.Name == "ContentRect" && m.ReturnType == typeof(UiRect))
+            .Where(m => { var p = m.GetParameters(); return p.Length >= 2 && p[0].ParameterType == typeof(MyGuiResources)
+                && p[1].ParameterType == typeof(UiControl) && p.Skip(2).All(x => x.IsOptional); })
+            .OrderBy(m => m.GetParameters().Length).First();
+        var ps = s_contentRect.GetParameters();
+        var args = new object?[ps.Length];
+        args[0] = res; args[1] = c;
+        for (int i = 2; i < ps.Length; i++) args[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue : null;
+        return (UiRect)s_contentRect.Invoke(null, args)!;
+    }
+
+    static System.Reflection.MethodInfo? s_contentRect;
 
     /// <summary>Wraps paragraphs into list rows that fit <paramref name="list"/>'s rows (as last laid out) in the real font; before the first layout,
     /// at about <paramref name="fallbackChars"/> characters. Blank lines between paragraphs stay.</summary>
