@@ -24,7 +24,7 @@ namespace PZA.MeitouUi;
 public static class PzaUi
 {
     /// <summary>The library's version (written in the log at Install).</summary>
-    public const string Version = "0.3.2";
+    public const string Version = "0.3.3";
 
     /// <summary>Where the library's lines go (the mod sets it, usually to its own log with its prefix).</summary>
     public static Action<string> Log = _ => { };
@@ -75,13 +75,13 @@ public static class PzaUi
     {
         if (s_windows.Any(x => x.Id == w.Id)) throw new ArgumentException("a window with id " + w.Id + " is already added");
         s_windows.Add(w);
-        if (w.Minimizable && s_installed && s_context is not null) PatchPointer(s_context.Harmony);
+        if (w.Minimizable && s_installed && s_harmony is not null) PatchPointer(s_harmony);
     }
 
     public static void Add(PzaTinyButton t)
     {
         s_tiny.Add(t);
-        if (s_installed && s_context is not null) PatchPointer(s_context.Harmony);
+        if (s_installed && s_harmony is not null) PatchPointer(s_harmony);
     }
 
     /// <summary>Resolves, patches and registers. Returns false (with a line) when the game lacks something: the mod then has no windows.</summary>
@@ -91,6 +91,9 @@ public static class PzaUi
     public static bool Install(Harmony harmony, ModContext? context = null)
     {
         if (s_installed) return true;
+        // 0.3.3: the library patches under its OWN Harmony id (the host's id + ".pzaui"), so a failed install unpatches only the
+        // library's patches; 0.3.2 called UnpatchAll on the host mod's id and took the host's own patches with it (review, 2026-11-22).
+        harmony = s_harmony ??= new Harmony(harmony.Id + ".pzaui");
         var missing = Access.ResolveAll();
         if (missing.Count > 0)
         {
@@ -116,6 +119,12 @@ public static class PzaUi
             return false;
         }
     }
+
+    /// <summary>The library's own Harmony (the host's id + ".pzaui"), made on the first Install.</summary>
+    static Harmony? s_harmony;
+
+    /// <summary>The library's Harmony id once installed (for the offline check: it must not be the host's).</summary>
+    public static string? HarmonyId => s_harmony?.Id;
 
     static void PatchPointer(Harmony harmony)
     {
