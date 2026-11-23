@@ -140,7 +140,9 @@ def main():
             for m in ms:
                 if only and m["id"] not in only: continue
                 work = copy_tree(tmp, name)
-                p = os.path.join(work, m["file"])
+                # the header names the file from the folder that holds the repos ("DustlifeMeitou\..."): its first part is the repo, whatever
+                # the checkout folder is called (a worktree such as DustlifeMeitou-pub060 passed by run_all_fuzz.py --path)
+                p = os.path.join(work, name, re.split(r"[\\/]", m["file"], maxsplit=1)[1])
                 s = open(p, encoding="utf-8").read()
                 n = s.replace("\r\n", "\n").count(m["find"])
                 if n != 1:
