@@ -53,8 +53,9 @@ $stamp = Join-Path $rt "meitou-dir.txt"
 if (-not (Test-Path $stamp) -or (Get-Content $stamp -Raw).Trim() -ne $MeitouDir) {
     if (Test-Path $rt) { Remove-Item -Recurse -Force $rt }
     New-Item -ItemType Directory -Force $rt | Out-Null
-    $patterns = "System*.dll", "Microsoft.*.dll", "mscorlib.dll", "netstandard.dll", "WindowsBase.dll", "coreclr.dll", "clrjit.dll",
-                "clrgc.dll", "hostfxr.dll", "hostpolicy.dll", "Meitou*.dll", "0Harmony.dll", "Bepu*.dll", "DotRecast*.dll", "*.so", "*Native*.dll"
+    # kit 1.1 (2026-11-22): EVERY DLL of the release. Meitou 0.22.2-nightly.20261122.2's MeitouClient.dll loads Silk.NET.Core in a module
+    # initializer, so a list of names (Meitou*, Bepu*...) failed every case at the first touch; the copy is cached per release folder.
+    $patterns = "*.dll", "*.so"
     foreach ($p in $patterns) { Copy-Item (Join-Path $MeitouDir $p) $rt -Force -ErrorAction SilentlyContinue }
     Set-Content -Path $stamp -Value $MeitouDir -Encoding ascii
 }

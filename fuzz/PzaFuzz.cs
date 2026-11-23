@@ -298,7 +298,7 @@ public sealed class PzaFuzz
         Directory.CreateDirectory(dir);
         var json = new
         {
-            mod, kit = "PZA's Meitou UI fuzz kit 1.0", result = pass ? "PASS" : "FAIL", seed, commit, dirty,
+            mod, kit = "PZA's Meitou UI fuzz kit 1.1", result = pass ? "PASS" : "FAIL", seed, commit, dirty,
             started = started.ToString("s", CultureInfo.InvariantCulture), finished = DateTime.Now.ToString("s", CultureInfo.InvariantCulture),
             targets = results.Select(r => new { name = r.Name, cases = r.Cases, failures = r.Failures, ms = r.Ms, lines = r.Lines }),
             counts = fz.Counts, notes = fz._notes,
