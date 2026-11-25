@@ -91,18 +91,24 @@ def copy_tree(tmp, repo_name):
 def run(work, repo_name, md, out, scale, targets):
     own = os.path.join(work, repo_name, "tests", "fuzz", "run.ps1")
     if not os.path.isfile(os.path.join(work, repo_name, "tests", "fuzz", "fuzz.csproj")) and os.path.isfile(own):
-        # a repo with its own fuzzer (WASD's tests\fuzz\run.ps1, "FUZZ: PASS"): fewer runs, a fixed seed, every target
-        cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", own, "-Runs", str(max(1000, int(200000 * scale))), "-Seed", "20261118"]
+        # a repo with its own fuzzer (WASD's tests\fuzz\run.ps1, "FUZZ: PASS"): fewer runs, a fixed seed, and the mutant's targets
+        tlist = [x.strip() for x in targets.split(",") if x.strip()] if (targets and targets != "*") else [""]
         t0 = time.time()
-        try:
-            p = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=1800)
-            text, rc = p.stdout + p.stderr, p.returncode
-        except subprocess.TimeoutExpired:
-            return "FAIL", "TIMEOUT (a hang counts as a kill)", time.time() - t0
-        lines = [l for l in text.splitlines() if l.strip()]
-        if "error CS" in text: return "BUILD-FAIL", next(l for l in lines if "error CS" in l)[:200], time.time() - t0
-        ok = rc == 0 and "FUZZ: PASS" in text
-        return ("PASS" if ok else "FAIL"), (next((l for l in lines if "FAIL" in l), lines[-1] if lines else ""))[:200], time.time() - t0
+        last_line = ""
+        for tg in tlist:
+            cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", own, "-Runs", str(max(1000, int(200000 * scale))), "-Seed", "20261118"]
+            if tg: cmd += ["-Only", tg]
+            try:
+                p = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=1800)
+                text, rc = p.stdout + p.stderr, p.returncode
+            except subprocess.TimeoutExpired:
+                return "FAIL", "TIMEOUT (a hang counts as a kill)", time.time() - t0
+            lines = [l for l in text.splitlines() if l.strip()]
+            if "error CS" in text: return "BUILD-FAIL", next(l for l in lines if "error CS" in l)[:200], time.time() - t0
+            ok = rc == 0 and "FUZZ: PASS" in text
+            last_line = (next((l for l in lines if "FAIL" in l), lines[-1] if lines else ""))[:200]
+            if not ok: return "FAIL", last_line, time.time() - t0
+        return "PASS", last_line, time.time() - t0
     ps = os.path.join(work, "PZAMeitouUi", "fuzz", "run_fuzz.ps1")
     cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps, "-Repo", os.path.join(work, repo_name),
            "-Scale", str(scale), "-MeitouDir", md, "-Out", out]
@@ -139,19 +145,23 @@ def main():
         else:
             for m in ms:
                 if only and m["id"] not in only: continue
-                work = copy_tree(tmp, name)
+                # Reuse the baseline temp copy and restore the single mutated file after each run (incremental build, same isolation).
                 # the header names the file from the folder that holds the repos ("DustlifeMeitou\..."): its first part is the repo, whatever
                 # the checkout folder is called (a worktree such as DustlifeMeitou-pub060 passed by run_all_fuzz.py --path)
                 p = os.path.join(work, name, re.split(r"[\\/]", m["file"], maxsplit=1)[1])
-                s = open(p, encoding="utf-8").read()
+                orig_bytes = open(p, "rb").read()
+                s = orig_bytes.decode("utf-8")
                 n = s.replace("\r\n", "\n").count(m["find"])
                 if n != 1:
                     rows.append(dict(id=m["id"], what=m["what"], verdict="NOT-APPLIED", detail="find text occurs %d times in %s" % (n, m["file"])))
                     print("%-14s NOT-APPLIED (%d times)" % (m["id"], n), flush=True); continue
                 crlf = "\r\n" in s
-                s = s.replace("\r\n", "\n").replace(m["find"], m["repl"])
-                open(p, "w", encoding="utf-8", newline="\r\n" if crlf else "\n").write(s)
-                res, last, dt = run(work, name, md, out, scale, m["targets"])
+                mutated = s.replace("\r\n", "\n").replace(m["find"], m["repl"])
+                try:
+                    open(p, "w", encoding="utf-8", newline="\r\n" if crlf else "\n").write(mutated)
+                    res, last, dt = run(work, name, md, out, scale, m["targets"])
+                finally:
+                    open(p, "wb").write(orig_bytes)
                 verdict = {"FAIL": "KILLED", "PASS": "SURVIVED"}.get(res, res)
                 rows.append(dict(id=m["id"], what=m["what"], verdict=verdict, detail=last, seconds=round(dt, 1)))
                 print("%-14s %-10s %5.0fs %s | %s" % (m["id"], verdict, dt, m["what"], last), flush=True)
