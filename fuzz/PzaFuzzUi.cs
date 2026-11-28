@@ -42,7 +42,9 @@ public static class PzaFuzzUi
             case ModSettingKind.Switch: return v is bool ? null : $"{s.Key} is not a bool ({v})";
             case ModSettingKind.Slider:
                 double d = Convert.ToDouble(v, CultureInfo.InvariantCulture);
-                return double.IsFinite(d) && d >= s.Min - 1e-9 && d <= s.Max + 1e-9 ? null : $"{s.Key} = {d} outside {s.Min}..{s.Max}";
+                // a float setting holds its bound as the nearest float (0.15f = 0.150000006): a float's rounding is not out of range (2026-11-28)
+                double tol = 1e-6 * Math.Max(1.0, Math.Max(Math.Abs(s.Min), Math.Abs(s.Max)));
+                return double.IsFinite(d) && d >= s.Min - tol && d <= s.Max + tol ? null : $"{s.Key} = {d} outside {s.Min}..{s.Max}";
             default: return s.Options.Contains(s.Text) ? null : $"{s.Key} = '{s.Text}' is not one of its options";
         }
     }
