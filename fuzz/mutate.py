@@ -12,8 +12,15 @@ Mutants live in <repo>\tests\fuzz\mutants.txt, verbatim (no escaping):
     its replacement
     >>>
 
-Usage: python -I mutate.py <repo folder> [--only ID,ID] [--scale 0.25]
+Usage: python -I mutate.py <repo folder> [--name <repo name>] [--only ID,ID] [--scale 0.25]
 Writes <repo>\tests\out\fuzz\mutation-report.txt and .json; exit 0 only when every mutant was KILLED.
+
+The repo folder may be any checkout (a worktree such as PZAMeitouDirectControl-jumpfov, run_all_fuzz.py --path): it is THAT folder that is
+copied and mutated, never the main checkout next to the kit (2026-11-28 fix: the copy used to come from <folder holding the kit>\<folder
+name>, so a worktree elsewhere, or one with the repo's own name, was gated on other code). --name is the repo's real name (the first part
+of each mutant's file path; default: the folder's name). A mutant's file must be in that repo or in PZAMeitouUi (the kit every mod compiles
+in, copied from the PZAMeitouUi holding this script, or from the target itself when the target is PZAMeitouUi); anything else, and a find
+text that is not there exactly once, is NOT-APPLIED, which fails the check. Self-test: fuzz\mutate_selftest.py.
 """
 import json, os, re, shutil, stat, subprocess, sys, tempfile, time
 
@@ -69,20 +76,22 @@ def meitou_dir(repo):
     raise SystemExit("no Meitou release: set MeitouDir in mod\\local.props or PZAMeitouUi\\fuzz\\local.props")
 
 
-def copy_tree(tmp, repo_name):
+def copy_tree(tmp, repo, repo_name):
+    r"""Copies the target checkout (the folder given, whatever it is called) to <tmp>\w\<repo name>, and the kit to <tmp>\w\PZAMeitouUi,
+    the layout the harness's relative imports expect (..\..\..\PZAMeitouUi\fuzz\fuzz.props)."""
     dst = os.path.join(tmp, "w")
     if os.path.isdir(dst): rmtree_retry(dst)
     os.makedirs(dst)
-    shutil.copytree(os.path.join(ROOT, repo_name), os.path.join(dst, repo_name), ignore=SKIP)
+    shutil.copytree(repo, os.path.join(dst, repo_name), ignore=SKIP)
     if repo_name != "PZAMeitouUi":
-        shutil.copytree(os.path.join(ROOT, "PZAMeitouUi"), os.path.join(dst, "PZAMeitouUi"), ignore=SKIP)
+        shutil.copytree(os.path.dirname(KIT), os.path.join(dst, "PZAMeitouUi"), ignore=SKIP)
     # the native libraries the harness loads (tests\fuzz\native.txt) live in build output folders the copy skips: bring the built ones
-    nl = os.path.join(ROOT, repo_name, "tests", "fuzz", "native.txt")
+    nl = os.path.join(repo, "tests", "fuzz", "native.txt")
     if os.path.isfile(nl):
         for line in open(nl, encoding="utf-8"):
             rel = line.strip()
             if not rel or rel.startswith("#"): continue
-            src, to = os.path.join(ROOT, repo_name, rel), os.path.join(dst, repo_name, rel)
+            src, to = os.path.join(repo, rel), os.path.join(dst, repo_name, rel)
             if os.path.isfile(src):
                 os.makedirs(os.path.dirname(to), exist_ok=True); shutil.copy2(src, to)
     return dst
@@ -107,7 +116,8 @@ def run(work, repo_name, md, out, scale, targets):
             if "error CS" in text: return "BUILD-FAIL", next(l for l in lines if "error CS" in l)[:200], time.time() - t0
             ok = rc == 0 and "FUZZ: PASS" in text
             last_line = (next((l for l in lines if "FAIL" in l), lines[-1] if lines else ""))[:200]
-            if not ok: return "FAIL", last_line, time.time() - t0
+            # a kill needs the fuzzer's own verdict: a run that broke (a locked file, a crash before the targets ran) is an ERROR
+            if not ok: return ("FAIL" if "FUZZ: FAIL" in text or any(l.lstrip().startswith("FAIL") for l in lines) else "ERROR"), last_line, time.time() - t0
         return "PASS", last_line, time.time() - t0
     ps = os.path.join(work, "PZAMeitouUi", "fuzz", "run_fuzz.ps1")
     cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps, "-Repo", os.path.join(work, repo_name),
@@ -122,22 +132,32 @@ def run(work, repo_name, md, out, scale, targets):
     lines = [l for l in text.splitlines() if l.strip()]
     if "error CS" in text or "harness build failed" in text:
         return "BUILD-FAIL", next((l for l in lines if "error CS" in l), lines[-1] if lines else "")[:200], time.time() - t0
-    first_fail = next((l.strip() for l in lines if l.lstrip().startswith(("FAIL", "HANG")) or " case " in l and "threw" in l), "")
-    return ("PASS" if rc == 0 else "FAIL"), (first_fail or (lines[-1] if lines else ""))[:200], time.time() - t0
+    first_fail = next((l.strip() for l in lines if (l.lstrip().startswith(("FAIL", "HANG")) and "no target ran" not in l)
+                       or " case " in l and "threw" in l), "")
+    if "no target ran" in text: return "ERROR", "the mutant's targets name no fuzz target (%s)" % targets, time.time() - t0
+    # 2026-11-28: a kill needs the harness's own verdict (a FAIL / HANG line or RESULT: FAIL). A run that broke before or around the
+    # targets (11-18: PowerShell Copy-Item IOException on a locked runtime file) is an ERROR, which fails the check, never a KILLED.
+    if rc == 0: res = "PASS"
+    elif first_fail or "RESULT: FAIL" in text: res = "FAIL"
+    else: res = "ERROR"
+    return res, (first_fail or (lines[-1] if lines else ""))[:200], time.time() - t0
 
 
 def main():
     if len(sys.argv) < 2: raise SystemExit(__doc__)
-    repo = os.path.abspath(sys.argv[1]); name = os.path.basename(repo.rstrip("\\/"))
+    repo = os.path.abspath(sys.argv[1])
+    name = sys.argv[sys.argv.index("--name") + 1] if "--name" in sys.argv else os.path.basename(repo.rstrip("\\/"))
     only = set(sys.argv[sys.argv.index("--only") + 1].split(",")) if "--only" in sys.argv else None
     scale = float(sys.argv[sys.argv.index("--scale") + 1]) if "--scale" in sys.argv else 0.25
+    if not os.path.isdir(repo): raise SystemExit("no such repo folder: " + repo)
     ms = parse(os.path.join(repo, "tests", "fuzz", "mutants.txt"))
+    print("target %s (as %s); kit %s" % (repo, name, repo if name == "PZAMeitouUi" else os.path.dirname(KIT)), flush=True)
     md = meitou_dir(repo)
     tmp = tempfile.mkdtemp(prefix="pza_mmut_")
     out = os.path.join(tmp, "out")   # shared: the runtime copy is made once
     rows = []
     try:
-        work = copy_tree(tmp, name)
+        work = copy_tree(tmp, repo, name)
         res, last, dt = run(work, name, md, out, scale, "*")
         print("baseline %-6s %5.0fs %s" % (res, dt, last), flush=True)
         if res != "PASS":
@@ -146,9 +166,14 @@ def main():
             for m in ms:
                 if only and m["id"] not in only: continue
                 # Reuse the baseline temp copy and restore the single mutated file after each run (incremental build, same isolation).
-                # the header names the file from the folder that holds the repos ("DustlifeMeitou\..."): its first part is the repo, whatever
-                # the checkout folder is called (a worktree such as DustlifeMeitou-pub060 passed by run_all_fuzz.py --path)
-                p = os.path.join(work, name, re.split(r"[\\/]", m["file"], maxsplit=1)[1])
+                # The header names the file from the folder that holds the repos: its first part is the repo (copied as <name>, whatever
+                # the checkout folder is called) or PZAMeitouUi (the kit copy). Anything else cannot be mutated here.
+                parts = re.split(r"[\\/]", m["file"], maxsplit=1)
+                p = os.path.join(work, parts[0], parts[1]) if len(parts) == 2 and parts[0] in (name, "PZAMeitouUi") else None
+                if p is None or not os.path.isfile(p):
+                    why = "file %s is not in %s or PZAMeitouUi" % (m["file"], name) if p is None else "no file %s in the copy" % m["file"]
+                    rows.append(dict(id=m["id"], what=m["what"], verdict="NOT-APPLIED", detail=why))
+                    print("%-14s NOT-APPLIED (%s)" % (m["id"], why), flush=True); continue
                 orig_bytes = open(p, "rb").read()
                 s = orig_bytes.decode("utf-8")
                 n = s.replace("\r\n", "\n").count(m["find"])
@@ -176,9 +201,9 @@ def main():
     rd = os.path.join(repo, "tests", "out", "fuzz"); os.makedirs(rd, exist_ok=True)
     stamp = time.strftime("%Y-%m-%d %H:%M")
     with open(os.path.join(rd, "mutation-report.txt"), "w", encoding="utf-8") as f:
-        f.write("%s mutation check (%s, commit %s%s): killed %d of %d -> %s\n\n" % (name, stamp, commit[:9], " + changes" if dirty else "", killed, total, "PASS" if ok else "FAIL"))
+        f.write("%s mutation check (%s, commit %s%s, checkout %s): killed %d of %d -> %s\n\n" % (name, stamp, commit[:9], " + changes" if dirty else "", repo, killed, total, "PASS" if ok else "FAIL"))
         for r in rows: f.write("%-14s %-11s %-70s %s\n" % (r["id"], r["verdict"], r["what"], r["detail"]))
-    json.dump(dict(repo=name, result="PASS" if ok else "FAIL", killed=killed, total=total, commit=commit, dirty=dirty,
+    json.dump(dict(repo=name, checkout=repo, result="PASS" if ok else "FAIL", killed=killed, total=total, commit=commit, dirty=dirty,
                    finished=time.strftime("%Y-%m-%dT%H:%M:%S"), rows=rows), open(os.path.join(rd, "mutation-report.json"), "w", encoding="utf-8"), indent=1)
     print("killed %d of %d -> %s; report %s" % (killed, total, "PASS" if ok else "FAIL", os.path.join(rd, "mutation-report.txt")))
     return 0 if ok else 1
